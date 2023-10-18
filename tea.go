@@ -293,14 +293,7 @@ func (p *Program) handleCommands(cmds chan Cmd) chan struct{} {
 				go func() {
 					// Recover from panics.
 					if !p.startupOptions.has(withoutCatchPanics) {
-						defer func() {
-							if r := recover(); r != nil {
-								fmt.Printf("Caught panic:\n\n%s\n\nRestoring terminal...\n\n", r)
-								debug.PrintStack()
-								p.errs <- fmt.Errorf("%v", r)
-								return
-							}
-						}()
+						defer p.recoverFromPanic()
 					}
 					msg := cmd() // this can be long.
 					p.Send(msg)
@@ -318,9 +311,20 @@ func (p *Program) disableMouse() {
 	p.renderer.disableMouseSGRMode()
 }
 
+func (p *Program) recoverFromPanic() {
+	if r := recover(); r != nil {
+		p.errs <- fmt.Errorf("caught panic: %s", debug.Stack())
+		return
+	}
+}
+
 // eventLoop is the central message loop. It receives and handles the default
 // Bubble Tea messages, update the model and triggers redraws.
 func (p *Program) eventLoop(model Model, cmds chan Cmd) (Model, error) {
+	// Recover from panics.
+	if !p.startupOptions.has(withoutCatchPanics) {
+		defer p.recoverFromPanic()
+	}
 	for {
 		select {
 		case <-p.ctx.Done():
